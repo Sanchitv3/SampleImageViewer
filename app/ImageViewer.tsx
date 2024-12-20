@@ -18,6 +18,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const DOUBLE_TAP_DELAY = 300;
 
 const ImageViewer = ({ images }: { images: string[] }) => {
   const [modalVisible, setModalVisible] = useState(false);
@@ -26,6 +27,8 @@ const ImageViewer = ({ images }: { images: string[] }) => {
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
   const scale = useSharedValue(1);
+  const savedScale = useSharedValue(1);
+  const lastTap = useSharedValue(0);
   const focalX = useSharedValue(0);
   const focalY = useSharedValue(0);
 
@@ -34,13 +37,16 @@ const ImageViewer = ({ images }: { images: string[] }) => {
     translateY.value = 0;
     translateX.value = 0;
     scale.value = 1;
+    savedScale.value = 1;
   };
 
   const nextImage = () => {
     if (currentIndex < images.length - 1) {
       setCurrentIndex(prev => prev + 1);
       translateX.value = 0;
+      translateY.value = 0;
       scale.value = 1;
+      savedScale.value = 1;
     }
   };
 
@@ -48,19 +54,56 @@ const ImageViewer = ({ images }: { images: string[] }) => {
     if (currentIndex > 0) {
       setCurrentIndex(prev => prev - 1);
       translateX.value = 0;
+      translateY.value = 0;
       scale.value = 1;
+      savedScale.value = 1;
     }
   };
 
   const pinchGesture = Gesture.Pinch()
+    .onStart(() => {
+      savedScale.value = scale.value;
+    })
     .onUpdate((event) => {
-      scale.value = Math.min(Math.max(event.scale, 0.5), 3);
+      // Apply the new scale based on the saved scale value
+      const newScale = savedScale.value * event.scale;
+      scale.value = Math.min(Math.max(newScale, 0.5), 3);
       focalX.value = event.focalX;
       focalY.value = event.focalY;
     })
     .onEnd(() => {
       if (scale.value < 1) {
         scale.value = withSpring(1);
+        savedScale.value = 1;
+      } else {
+        savedScale.value = scale.value;
+      }
+    });
+
+  const doubleTapGesture = Gesture.Tap()
+    .numberOfTaps(2)
+    .maxDuration(DOUBLE_TAP_DELAY)
+    .onStart((event) => {
+      if (scale.value > 1) {
+        // If already zoomed in, reset to normal
+        scale.value = withSpring(1);
+        savedScale.value = 1;
+        translateX.value = withSpring(0);
+        translateY.value = withSpring(0);
+      } else {
+        // Zoom in to 2x at the tap location
+        scale.value = withSpring(2);
+        savedScale.value = 2;
+        
+        // Calculate the focal point for zooming
+        const centerX = SCREEN_WIDTH / 2;
+        const centerY = SCREEN_HEIGHT / 2;
+        const focusX = event.x - centerX;
+        const focusY = event.y - centerY;
+        
+        // Adjust translation to zoom into the tapped point
+        translateX.value = withSpring(-focusX);
+        translateY.value = withSpring(-focusY);
       }
     });
 
@@ -98,6 +141,7 @@ const ImageViewer = ({ images }: { images: string[] }) => {
         translateX.value = withSpring(0);
         translateY.value = withSpring(0);
         scale.value = withSpring(1);
+        savedScale.value = 1;
       } else {
         // When zoomed, bound the pan values
         const maxTranslateX = (scale.value - 1) * SCREEN_WIDTH / 2;
@@ -108,7 +152,10 @@ const ImageViewer = ({ images }: { images: string[] }) => {
       }
     });
 
-  const composedGesture = Gesture.Simultaneous(pinchGesture, panGesture);
+  const composedGesture = Gesture.Race(
+    doubleTapGesture,
+    Gesture.Simultaneous(pinchGesture, panGesture)
+  );
 
   const animatedStyle = useAnimatedStyle(() => {
     return {
