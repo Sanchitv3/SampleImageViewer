@@ -168,7 +168,7 @@ const ImageViewer = ({ Images, renderItems }: { Images: string[], renderItems: (
         // style={styles.container}
         >
             {/* Fullscreen modal */}
-            <Modal visible={modalVisible} onRequestClose={closeModal} transparent={true}>
+            <Modal visible={modalVisible} onRequestClose={closeModal} transparent={true} statusBarTranslucent>
             {/* {isWeb ? <Pressable onPress={closeModal} style={{ position: 'absolute', top: 11, right: 11 , padding: 10, zIndex: 1000, backgroundColor: "black", borderRadius: 100, width: 30, height: 30, justifyContent: 'center', alignItems: 'center'}}>
                         <Text style={{ color: 'white', fontSize: 16, fontWeight: 'bold', fontFamily: 'monospace'}}>x</Text>
                     </Pressable> : null} */}
