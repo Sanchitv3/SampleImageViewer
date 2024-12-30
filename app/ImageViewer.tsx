@@ -7,6 +7,9 @@ import {
     Dimensions,
     StatusBar,
     TouchableOpacity,
+    Platform,
+    Pressable,
+    Text,
 } from 'react-native';
 import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, {
@@ -14,15 +17,16 @@ import Animated, {
     useSharedValue,
     withSpring,
     runOnJS,
-    withTiming,
 } from 'react-native-reanimated';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const DOUBLE_TAP_DELAY = 300;
 
-const ImageViewer = ({ image }: { image: string }) => {
-    const [modalVisible, setModalVisible] = useState(false);
+const isWeb = Platform.OS === 'web';
 
+const ImageViewer = ({ Images, renderItems }: { Images: string[], renderItems: (image: string) => React.ReactNode }) => {
+    const [modalVisible, setModalVisible] = useState(false);
+    const [currentIndex, setCurrentIndex] = useState(0);
     const translateX = useSharedValue(0);
     const translateY = useSharedValue(0);
     const scale = useSharedValue(1);
@@ -32,11 +36,11 @@ const ImageViewer = ({ image }: { image: string }) => {
     const focalY = useSharedValue(0);
 
     const closeModal = () => {
+        // translateY.value = 0;
+        // translateX.value = 0;
+        // scale.value = 1;
+        // savedScale.value = 1;
         setModalVisible(false);
-        translateY.value = 0;
-        translateX.value = 0;
-        scale.value = 1;
-        savedScale.value = 1;
     };
 
     const pinchGesture = Gesture.Pinch()
@@ -86,26 +90,38 @@ const ImageViewer = ({ image }: { image: string }) => {
             }
         });
 
-    const panGesture = Gesture.Pan()
+        const panGesture = Gesture.Pan()
         .onUpdate((event) => {
-            if (scale.value > 1) {
-                // When zoomed in, allow panning within bounds
-                translateX.value = event.translationX;
-                translateY.value = event.translationY;
-            } else {
-                // Normal swipe behavior when not zoomed
-                if (Math.abs(event.translationY) > Math.abs(event.translationX)) {
-                    translateY.value = event.translationY;
-                    scale.value = Math.max(0.8, 1 - Math.abs(event.translationY) / SCREEN_HEIGHT);
-                }
+          if (scale.value > 1) {
+            // When zoomed in, allow normal panning
+            translateX.value = event.translationX;
+            translateY.value = event.translationY;
+          } else {
+            // When not zoomed, handle horizontal swipes for navigation
+            translateX.value = event.translationX;
+            if (Math.abs(event.translationY) > Math.abs(event.translationX)) {
+              translateY.value = event.translationY;
+              scale.value = Math.max(0.5, 1 - Math.abs(event.translationY) / SCREEN_HEIGHT);
+              console.log('scale value : ', scale.value);
             }
+          }
         })
         .onEnd((event) => {
-            if (scale.value <= 1) {
-                if (Math.abs(event.translationY) > SCREEN_HEIGHT * 0.2) {
-                    runOnJS(closeModal)();
-                }
+          if (scale.value <= 1) {
+            if (Math.abs(event.translationY) > SCREEN_HEIGHT * 0.05) {
+              runOnJS(closeModal)();
+            } else if (Math.abs(event.translationX) > SCREEN_WIDTH * 0.2) {
+              // Handle image navigation
+              if (event.translationX > 0 && currentIndex > 0) {
+                runOnJS(setCurrentIndex)(currentIndex - 1);
+              } else if (event.translationX < 0 && currentIndex < Images.length - 1) {
+                runOnJS(setCurrentIndex)(currentIndex + 1);
+              }
             }
+            translateX.value = withSpring(0);
+            translateY.value = withSpring(0);
+            scale.value = withSpring(1);
+          }
 
             // Reset position if not zoomed
             if (scale.value <= 1) {
@@ -128,38 +144,56 @@ const ImageViewer = ({ image }: { image: string }) => {
         Gesture.Simultaneous(pinchGesture, panGesture)
     );
 
+    console.log('current index : ', scale.value);
+
     const animatedStyle = useAnimatedStyle(() => {
         return {
             transform: [
                 { translateX: translateX.value },
                 { translateY: translateY.value },
-                { scale: scale.value },
+                { scale: scale.value }
             ],
+            // backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        };
+    });
+
+    const animatedStyle2 = useAnimatedStyle(() => {
+        return {
+            opacity: scale.value,
         };
     });
 
     return (
-        <View style={styles.container}>
+        <View 
+        // style={styles.container}
+        >
             {/* Fullscreen modal */}
-            <Modal visible={modalVisible} transparent={true} animationType="fade">
-                <GestureHandlerRootView style={styles.modalContainer}>
+            <Modal visible={modalVisible} onRequestClose={closeModal} transparent={true}>
+            {/* {isWeb ? <Pressable onPress={closeModal} style={{ position: 'absolute', top: 11, right: 11 , padding: 10, zIndex: 1000, backgroundColor: "black", borderRadius: 100, width: 30, height: 30, justifyContent: 'center', alignItems: 'center'}}>
+                        <Text style={{ color: 'white', fontSize: 16, fontWeight: 'bold', fontFamily: 'monospace'}}>x</Text>
+                    </Pressable> : null} */}
+                <Animated.View style={[{ flex: 1, backgroundColor: 'black'  }, animatedStyle2]}>
+                <GestureHandlerRootView 
+                // style={styles.modalContainer}
+                >
                     <StatusBar hidden />
+                    
                     <GestureDetector gesture={composedGesture}>
-                        <Animated.View style={[styles.modalContent, animatedStyle]}>
-                            <Image
-                                source={{ uri: image }}
-                                style={styles.fullImage}
-                                resizeMode="contain"
-                            />
+                        <Animated.View 
+                        // style={[styles.modalContent, animatedStyle]}
+                        style={[animatedStyle]}
+                        >
+                        {renderItems(Images[currentIndex])}
                         </Animated.View>
                     </GestureDetector>
                 </GestureHandlerRootView>
+                </Animated.View>
             </Modal>
 
             {/* Image Thumbnail to trigger modal */}
             <TouchableOpacity onPress={() => setModalVisible(true)}>
                 <Image
-                    source={{ uri: image }}
+                    source={{ uri: Images[currentIndex] }}
                     style={styles.thumbnailImage}
                     resizeMode="contain"
                 />
@@ -173,11 +207,10 @@ const styles = StyleSheet.create({
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: 'black',
+        backgroundColor: 'red',
     },
     modalContainer: {
         flex: 1,
-        backgroundColor: 'black',
     },
     modalContent: {
         flex: 1,
